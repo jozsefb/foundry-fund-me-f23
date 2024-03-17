@@ -14,17 +14,17 @@ contract FundMe {
     using PriceConverter for uint256;
 
     uint public constant MINIMUM_USD = 5e18;
-    address[] public funders;
-    mapping(address funders => uint256 fundedAmount) public addressToAmountFunded;
+    address[] private s_funders;
+    mapping(address funders => uint256 fundedAmount) private s_addressToAmountFunded;
     AggregatorV3Interface private s_priceFeed;
 
-    address public immutable owner;
+    address private immutable i_owner;
 
     // 668214, 574030
     // 647841, 553725
     // 624682, 531222
     constructor(address priceFeedAddress) {
-        owner = msg.sender;
+        i_owner = msg.sender;
         s_priceFeed = AggregatorV3Interface(priceFeedAddress);
     }
 
@@ -32,16 +32,16 @@ contract FundMe {
         // allow users to send $
         // have minimum $ spent
         require(msg.value.getConversionRate(s_priceFeed) >= MINIMUM_USD, "Didn't send enough ETH."); // 1e18 == 1 ETH == 1 * 10 ** 18 ---- (** == ^)
-        funders.push(msg.sender);
-        addressToAmountFunded[msg.sender] = addressToAmountFunded[msg.sender] + msg.value;
+        s_funders.push(msg.sender);
+        s_addressToAmountFunded[msg.sender] = s_addressToAmountFunded[msg.sender] + msg.value;
     }
 
     function withdrawOptions() internal {
-        for(uint256 i = 0; i < funders.length; i++) {
-            address funder = funders[i];
-            addressToAmountFunded[funder] = 0;
+        for(uint256 i = 0; i < s_funders.length; i++) {
+            address funder = s_funders[i];
+            s_addressToAmountFunded[funder] = 0;
         }
-        funders = new address[](0);
+        s_funders = new address[](0);
         // withdraw the funds
         // 1. transfer
         // 2. send
@@ -63,11 +63,24 @@ contract FundMe {
 
     function withdraw() public onlyOwner {
         // reset funders
-        for(uint256 i = 0; i < funders.length; i++) {
-            address funder = funders[i];
-            addressToAmountFunded[funder] = 0;
+        for(uint256 i = 0; i < s_funders.length; i++) {
+            address funder = s_funders[i];
+            s_addressToAmountFunded[funder] = 0;
         }
-        funders = new address[](0);
+        s_funders = new address[](0);
+        // withdraw all funds
+        (bool callSuccess, ) = payable(msg.sender).call{value: address(this).balance}("");
+        require(callSuccess, "Call failed.");
+    }
+
+    function withdrawCheaper() public onlyOwner {
+        // reset funders
+        uint256 numberOfFunders = s_funders.length;
+        for(uint256 i = 0; i < numberOfFunders; i++) {
+            address funder = s_funders[i];
+            s_addressToAmountFunded[funder] = 0;
+        }
+        s_funders = new address[](0);
         // withdraw all funds
         (bool callSuccess, ) = payable(msg.sender).call{value: address(this).balance}("");
         require(callSuccess, "Call failed.");
@@ -79,7 +92,7 @@ contract FundMe {
 
     modifier onlyOwner() {
         // require(msg.sender == owner, "Must be owner!");
-        if (msg.sender != owner) {
+        if (msg.sender != i_owner) {
             revert FundMe__NotOwner();
         }
 
@@ -89,9 +102,21 @@ contract FundMe {
 
     receive() external payable {
         fund();
-     }
+    }
 
-     fallback() external payable {
+    fallback() external payable {
         fund();
-      }
+    }
+    
+    function getFunder(uint256 index) external view returns(address) {
+        return s_funders[index];
+    }
+
+    function getAmountFunded(address funder) external view returns(uint256) {
+        return s_addressToAmountFunded[funder];
+    }
+
+    function getOwner() external view returns(address) {
+        return i_owner;
+    }
 }
